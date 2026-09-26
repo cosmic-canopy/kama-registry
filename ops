@@ -33,8 +33,13 @@ case "$task" in
     # with a parse error published cleanly, and only broke in the consumer's build.)
     ( cd "$(dirname "$manifest")" && "$KAMA" check "$(basename "$manifest")" ) || { echo "ops: $manifest does not check — nothing published" >&2; exit 1; }
     ident=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["name"]+"@"+d["version"])' "$manifest")
-    ( cd "$(dirname "$manifest")" && "$KAMA" publish "$(basename "$manifest")" --registry "file://$REG" )
-    python3 tools/check.py --base "$(base_ref)"
+    # Anything refused from here on leaves registry/ exactly as it was (it was checked clean above): a refused
+    # tarball left lying in the working tree is one `git add -A` away from being released by hand.
+    if ! ( cd "$(dirname "$manifest")" && "$KAMA" publish "$(basename "$manifest")" --registry "file://$REG" ) \
+       || ! python3 tools/check.py --base "$(base_ref)"; then
+      git checkout -q -- registry 2>/dev/null || true; git clean -qfd registry
+      echo "ops: refused — registry/ restored, nothing published" >&2; exit 1
+    fi
     git add registry && git commit -q -m "publish $ident" && echo "ops: committed 'publish $ident' — push to release it: git push"
     ;;
   check)  python3 tools/check.py --base "${1:-$(base_ref)}" ;;

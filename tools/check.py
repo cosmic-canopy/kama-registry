@@ -8,20 +8,34 @@ and this repo accepts commits from anywhere git does — so the host enforces th
   write-once  against --base, no existing version (or package) is removed, and no published version's
               entry or tarball bytes change. A lockfile pins the hash; changing it breaks every consumer.
   scope       this is the OFFICIAL registry: it serves `@kama/*` and nothing else, and never `@std/*`
+  secrets     no tarball contains a secret-shaped file (.env, private keys, credential files). `kama
+              publish` tars the directory and ignores .gitignore, so a project's .env ships unless
+              something refuses it — and a version here is permanent, so it can never be withdrawn.
   hygiene     no stray file ships that no index names, and 404.html exists — without it Cloudflare Pages
               serves index.html with status 200 for every unknown path, so a lookup for a package that
               does not exist would get a page of HTML instead of a 404.
 
 With no --base (or an all-zero / unknown ref, as on a repo's first push) the history rules are skipped.
 """
-import hashlib, json, os, re, subprocess, sys
+import hashlib, json, os, re, subprocess, sys, tarfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TREE = os.path.join(ROOT, 'registry')
 PREFIX = 'registry/'
 OFFICIAL, RESERVED = '@kama/', '@std/'
 INTEGRITY = re.compile(r'^sha256-([0-9a-f]{64})$')
-SITE_FILES = {'index.html', '404.html'}      # the tree's own pages, not package content
+SITE_FILES = {'index.html', '404.html'}
+# Secret-shaped basenames. A template (.env.example) is the documented way to ship the NAMES without values.
+SECRET = re.compile(r'''^(\.env(\..+)?|.*\.(pem|key|p12|pfx|jks|keystore)|id_(rsa|dsa|ecdsa|ed25519)|\.netrc|\.npmrc|\.pypirc|kama\.local\.json)$''')
+SECRET_OK = re.compile(r'^\.env\.(example|sample|template|dist)$')
+
+def secrets_in(path):
+    try:
+        with tarfile.open(path, 'r:*') as t:
+            return [m.name for m in t.getmembers()
+                    if m.isfile() and SECRET.match(os.path.basename(m.name)) and not SECRET_OK.match(os.path.basename(m.name))]
+    except tarfile.TarError as e:
+        return [f'<unreadable tarball: {e}>']      # the tree's own pages, not package content
 
 errors = []
 def err(msg): errors.append(msg)
@@ -76,6 +90,10 @@ def main():
             if not os.path.isfile(p): err(f'{where}: tarball {tb!r} does not exist'); continue
             if hashlib.sha256(open(p, 'rb').read()).hexdigest() != m.group(1):
                 err(f'{where}: tarball {tb!r} does not hash to its recorded integrity')
+            for leak in secrets_in(p):
+                err(f'{where}: tarball contains {leak!r}, which looks like a secret — a published version '
+                    f'is permanent, so it could never be withdrawn. Remove it from the package and republish '
+                    f'(a template such as .env.example is fine)')
         now[pkg] = seen
 
     for d, _, files in os.walk(TREE):

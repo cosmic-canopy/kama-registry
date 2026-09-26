@@ -54,6 +54,10 @@ committed indexes, and that a missing package gets a real 404.
   a release, publish a new version.
 - **Scope** — this is the official registry: `@kama/*` only. `@std` is reserved forever — the standard
   library ships inside the compiler and is never a package.
+- **Secrets** — no tarball may contain a secret-shaped file: `.env` and `.env.*`, private keys (`*.pem`,
+  `*.key`, `id_rsa` …), `.netrc`/`.npmrc`/`.pypirc`, `kama.local.json`. A template such as `.env.example`
+  is fine. `kama publish` currently tars the project directory and does not read `.gitignore`, so this is
+  the line that stops a project's `.env` becoming a permanent public file.
 - **Hygiene** — no file ships that no index names, and `404.html` exists. Without it, Cloudflare Pages
   treats the site as a single-page app and answers every unknown path with `index.html` and status 200.
 
