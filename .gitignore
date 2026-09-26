@@ -1,0 +1,3 @@
+# local secrets — seed from .env.example
+.env
+.DS_Store

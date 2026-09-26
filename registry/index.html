@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kama package registry</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1c1c1c; --muted: #5f5f5f; --bg: #fbfaf8; --code: #efece6; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e9e6e1; --muted: #a39e96; --bg: #161514; --code: #262422; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, sans-serif; }
+  main { max-width: 42rem; margin: 0 auto; padding: 3rem 1rem; }
+  h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+  p { margin: 0 0 1rem; } .muted { color: var(--muted); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; background: var(--code); border-radius: 4px; }
+  code { padding: .1em .3em; } pre { padding: .8rem 1rem; overflow-x: auto; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <h1>kama package registry</h1>
+  <p>This host is read by the <a href="https://kama-lang.org">kama</a> toolchain, not by browsers: it serves
+  the official <code>@kama/*</code> packages as a static tree.</p>
+  <pre>{
+  "registries": { "@kama": "https://registry.kama-lang.org" },
+  "dependencies": { "@kama/sodium": { "version": "^0.4.0" } }
+}</pre>
+  <p>Add a dependency with <code>kama pkg add kama.json @kama/sodium --version ^0.4.0</code>, then
+  <code>kama pkg install kama.json</code>. How registries work:
+  <a href="https://kama-lang.org/docs/packages/">kama-lang.org/docs/packages</a>.</p>
+  <p class="muted">Every published version is immutable and pinned by its sha256. The publish history is the
+  git log of <a href="https://github.com/cosmic-canopy/kama-registry">cosmic-canopy/kama-registry</a>.</p>
+</main>
+</body>
+</html>

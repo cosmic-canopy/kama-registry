@@ -1,0 +1,54 @@
+#!/bin/sh
+# ops — maintainer tasks for the kama package registry. Auto-loads .env (copy .env.example first).
+set -eu
+CALLER=$(pwd)
+cd "$(dirname "$0")"
+REG="$(pwd)/registry"
+[ -f .env ] && { set -a; . ./.env; set +a; }
+KAMA="${KAMA:-kama}"
+PROJECT=kama-registry                     # the Cloudflare Pages project (declared in cstar/provisioning)
+HOST=https://registry.kama-lang.org
+
+usage() { cat <<'U'
+kama registry ops — usage: ./ops <task>
+
+  publish <kama.json>   publish a package into registry/, check it, and commit it (does NOT push)
+  check [<ref>]         integrity, scope and write-once checks (default base: origin/main, else HEAD)
+  deploy                deploy registry/ to Cloudflare Pages by hand (CI does this on push to main)
+  verify                compare every live index.json with the tree, and check a missing path 404s
+  help                  this help
+U
+}
+base_ref() { git rev-parse -q --verify origin/main >/dev/null && echo origin/main || { git rev-parse -q --verify HEAD >/dev/null && echo HEAD || echo; }; }
+
+task="${1:-help}"; [ $# -gt 0 ] && shift || true
+case "$task" in
+  publish)
+    manifest="${1:?usage: ./ops publish <path/to/kama.json>}"
+    case "$manifest" in /*) ;; *) manifest="$CALLER/$manifest" ;; esac     # relative to where you ran it
+    [ -f "$manifest" ] || { echo "ops: no such manifest: $manifest" >&2; exit 1; }
+    [ -z "$(git status --porcelain -- registry)" ] || { echo "ops: registry/ has uncommitted changes — commit or discard them first" >&2; exit 1; }
+    # A published version is permanent, and `kama publish` tarballs whatever is there — it does not compile
+    # it. A package that fails to check would be released forever, so check it first. (Measured: a package
+    # with a parse error published cleanly, and only broke in the consumer's build.)
+    ( cd "$(dirname "$manifest")" && "$KAMA" check "$(basename "$manifest")" ) || { echo "ops: $manifest does not check — nothing published" >&2; exit 1; }
+    ident=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["name"]+"@"+d["version"])' "$manifest")
+    ( cd "$(dirname "$manifest")" && "$KAMA" publish "$(basename "$manifest")" --registry "file://$REG" )
+    python3 tools/check.py --base "$(base_ref)"
+    git add registry && git commit -q -m "publish $ident" && echo "ops: committed 'publish $ident' — push to release it: git push"
+    ;;
+  check)  python3 tools/check.py --base "${1:-$(base_ref)}" ;;
+  deploy)
+    python3 tools/check.py --base "$(base_ref)"
+    npx --yes wrangler@3 pages deploy registry --project-name="$PROJECT" --branch=main ;;
+  verify)
+    rc=0
+    for f in $(cd registry && find . -name index.json | sed 's|^\./||'); do
+      if curl -fsS "$HOST/$f" | cmp -s - "registry/$f"; then echo "  live = tree   $f"; else echo "  DIFFERS       $f"; rc=1; fi
+    done
+    code=$(curl -s -o /dev/null -w '%{http_code}' "$HOST/@kama/no-such-package/index.json")
+    [ "$code" = 404 ] && echo "  missing path -> 404" || { echo "  missing path -> $code (want 404 — is registry/404.html deployed?)"; rc=1; }
+    exit $rc ;;
+  -h|--help|help) usage ;;
+  *) echo "ops: unknown task: $task" >&2; usage; exit 2 ;;
+esac
