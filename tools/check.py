@@ -8,9 +8,11 @@ and this repo accepts commits from anywhere git does — so the host enforces th
   write-once  against --base, no existing version (or package) is removed, and no published version's
               entry or tarball bytes change. A lockfile pins the hash; changing it breaks every consumer.
   scope       this is the OFFICIAL registry: it serves `@kama/*` and nothing else, and never `@std/*`
-  secrets     no tarball contains a secret-shaped file (.env, private keys, credential files). `kama
-              publish` tars the directory and ignores .gitignore, so a project's .env ships unless
-              something refuses it — and a version here is permanent, so it can never be withdrawn.
+  secrets     no tarball contains a secret-shaped file (.env, private keys, credential files). Before 0.9.452
+              `kama publish` tarred the directory and ignored .gitignore, so a gitignored .env shipped;
+              from 0.9.452 it ships only committed, git-tracked files and refuses these names itself. But
+              this repo takes a tarball from any compiler, and a version here is permanent — it can never
+              be withdrawn — so the host refuses them whatever the publisher ran.
   hygiene     no stray file ships that no index names, and 404.html exists — without it Cloudflare Pages
               serves index.html with status 200 for every unknown path, so a lookup for a package that
               does not exist would get a page of HTML instead of a 404.
