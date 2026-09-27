@@ -1,0 +1,6 @@
+{
+  "name": "@kama/sodium",
+  "versions": [
+    { "version": "0.5.0", "integrity": "sha256-2ce387db7f55971a29befb9426b0044fa11c6e2b5dc27edecfb87acc4c1b555d", "tarball": "@kama/sodium/0.5.0.tar.gz", "revision": "git:03352c01697b20ff6af93ff10d06ee75c10a52df" }
+  ]
+}
