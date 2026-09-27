@@ -21,6 +21,7 @@ jobs:
       # Integrity, scope (@kama/* only) and write-once against what was live before this push — the same
       # rules `kama publish` applies, enforced by the host, because git accepts commits `kama publish`
       # never saw. A pull request is checked against its base; a first push has no base and skips history.
+      # A new version's tarball is downloaded from the bucket's public domain — no secret needed here.
       - name: check the registry tree
         run: python3 tools/check.py --base "${{ github.event.pull_request.base.sha || github.event.before }}"
 

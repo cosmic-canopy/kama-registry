@@ -22,10 +22,10 @@
   <p>This host is read by the <a href="https://kama-lang.org">kama</a> toolchain, not by browsers: it serves
   the official <code>@kama/*</code> packages as a static tree.</p>
   <pre>{
-  "registries": { "@kama": "https://registry.kama-lang.org" },
-  "dependencies": { "@kama/sodium": { "version": "^0.4.0" } }
+  "dependencies": { "@kama/sodium": { "version": "^0.5.0" } }
 }</pre>
-  <p>Add a dependency with <code>kama pkg add kama.json @kama/sodium --version ^0.4.0</code>, then
+  <p>It is the built-in default since kama 0.9.457. Add a dependency with
+  <code>kama pkg add kama.json @kama/sodium --version ^0.5.0</code>, then
   <code>kama pkg install kama.json</code>. How registries work:
   <a href="https://kama-lang.org/docs/packages/">kama-lang.org/docs/packages</a>.</p>
   <p class="muted">Every published version is immutable and pinned by its sha256. The publish history is the

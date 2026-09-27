@@ -8,14 +8,38 @@ REG="$(pwd)/registry"
 KAMA="${KAMA:-kama}"
 PROJECT=kama-registry                     # the Cloudflare Pages project (declared in cstar/provisioning)
 HOST=https://registry.kama-lang.org
+BUCKET=kama-registry-tarballs             # the R2 bucket holding every tarball (declared in cstar/provisioning)
+WRANGLER="${WRANGLER:-npx --yes wrangler@3}"
+
+sha256() { python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$1"; }
+
+# Put one tarball in the bucket, then prove the bucket holds exactly those bytes. The bucket is locked — nothing
+# in it can be overwritten or deleted, ever — so this is the point of no return, and it is reached only after
+# every check has passed. It asks first, through the API (never the public URL, whose edge would cache the
+# 404): the SAME bytes already there are fine (a re-run after a failed commit); different bytes mean that
+# version number is spent. Anything it cannot classify refuses rather than upload blind.
+upload() {   # upload <file> <key>
+  want=$(sha256 "$1"); got=$(mktemp)
+  if out=$($WRANGLER r2 object get "$BUCKET/$2" --file "$got" 2>&1); then
+    [ "$(sha256 "$got")" = "$want" ] && { rm -f "$got"; echo "ops: $2 is already in the bucket, same bytes"; return 0; }
+    rm -f "$got"; echo "ops: $2 is already in the bucket with DIFFERENT bytes — that version is spent; bump the version" >&2; return 1
+  fi
+  case "$out" in *"does not exist"*) ;; *) echo "ops: cannot tell whether $2 is in the bucket — not uploading blind:" >&2; echo "$out" >&2; return 1 ;; esac
+  $WRANGLER r2 object put "$BUCKET/$2" --file "$1" --content-type application/gzip \
+    --cache-control "public, max-age=31536000, immutable" >/dev/null || { echo "ops: upload of $2 failed" >&2; return 1; }
+  $WRANGLER r2 object get "$BUCKET/$2" --file "$got" >/dev/null 2>&1 && [ "$(sha256 "$got")" = "$want" ] \
+    || { rm -f "$got"; echo "ops: after the upload, the bucket does not hold the bytes of $2" >&2; return 1; }
+  rm -f "$got"; echo "ops: uploaded $2 (permanent)"
+}
 
 usage() { cat <<'U'
 kama registry ops — usage: ./ops <task>
 
-  publish <kama.json>   publish a package into registry/, check it, and commit it (does NOT push)
+  publish <kama.json>   publish a package: check it, upload its tarball (permanent), commit its index (does NOT push)
+  migrate               one-time: move tarballs still tracked in registry/ into the bucket, and commit
   check [<ref>]         integrity, scope and write-once checks (default base: origin/main, else HEAD)
   deploy                deploy registry/ to Cloudflare Pages by hand (CI does this on push to main)
-  verify                compare every live index.json with the tree, and check a missing path 404s
+  verify                live index.json = tree, every tarball (through the redirect) = its integrity, 404s
   help                  this help
 U
 }
@@ -33,14 +57,33 @@ case "$task" in
     # with a parse error published cleanly, and only broke in the consumer's build.)
     ( cd "$(dirname "$manifest")" && "$KAMA" check "$(basename "$manifest")" ) || { echo "ops: $manifest does not check — nothing published" >&2; exit 1; }
     ident=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["name"]+"@"+d["version"])' "$manifest")
-    # Anything refused from here on leaves registry/ exactly as it was (it was checked clean above): a refused
-    # tarball left lying in the working tree is one `git add -A` away from being released by hand.
-    if ! ( cd "$(dirname "$manifest")" && "$KAMA" publish "$(basename "$manifest")" --registry "file://$REG" ) \
-       || ! python3 tools/check.py --base "$(base_ref)"; then
-      git checkout -q -- registry 2>/dev/null || true; git clean -qfd registry
-      echo "ops: refused — registry/ restored, nothing published" >&2; exit 1
-    fi
-    git add registry && git commit -q -m "publish $ident" && echo "ops: committed 'publish $ident' — push to release it: git push"
+    stage=$(mktemp -d)
+    # Anything refused before the upload leaves registry/ exactly as it was (it was checked clean above): a
+    # refused tarball left lying in the working tree is one `git add -A` away from being committed.
+    refuse() { git checkout -q -- registry 2>/dev/null || true; git clean -qfd registry; rm -rf "$stage"; echo "ops: refused — $1" >&2; exit 1; }
+    ( cd "$(dirname "$manifest")" && "$KAMA" publish "$(basename "$manifest")" --registry "file://$REG" ) \
+      || refuse "registry/ restored, nothing published"
+    # `kama publish` writes the tarball beside its index; registry/ never holds one, so it is staged out at once.
+    git ls-files --others -- 'registry/*.tar.gz' | while IFS= read -r f; do
+      mkdir -p "$stage/$(dirname "${f#registry/}")"; mv "$f" "$stage/${f#registry/}"
+    done
+    REGISTRY_PENDING_DIR="$stage" python3 tools/check.py --base "$(base_ref)" || refuse "registry/ restored, nothing uploaded"
+    ( cd "$stage" && find . -name '*.tar.gz' | sed 's|^\./||' ) | while IFS= read -r key; do
+      # The archive is deterministic, so a re-run rebuilds the same bytes, and ones already uploaded are accepted.
+      upload "$stage/$key" "$key" || { echo "ops: the index is NOT committed — \`git checkout -- registry\`, fix, and re-run" >&2; exit 1; }
+    done || { rm -rf "$stage"; exit 1; }
+    rm -rf "$stage"
+    git add registry && git commit -q -m "publish $ident" && echo "ops: committed 'publish $ident' — push to release its index: git push"
+    ;;
+  migrate)
+    # One-time (2026-09-27): the tarballs published while they still lived in git move into the bucket. Their
+    # index entries do not change — `_redirects` serves the same paths from there — and git keeps them in history.
+    files=$(git ls-files -- 'registry/*.tar.gz')
+    [ -n "$files" ] || { echo "ops: no tarball is tracked in registry/ — nothing to migrate"; exit 0; }
+    for f in $files; do upload "$f" "${f#registry/}" || exit 1; git rm -q -- "$f"; done
+    python3 tools/check.py --base "$(base_ref)" || { echo "ops: check failed after the move — nothing committed (git restore --staged registry)" >&2; exit 1; }
+    git commit -q -m "tarballs: move the published tarballs into R2 (dl.kama-lang.org)" \
+      && echo "ops: committed the move — push it (with the tooling commit) to deploy: git push"
     ;;
   check)  python3 tools/check.py --base "${1:-$(base_ref)}" ;;
   deploy)
@@ -49,7 +92,14 @@ case "$task" in
   verify)
     rc=0
     for f in $(cd registry && find . -name index.json | sed 's|^\./||'); do
+      # No -L: an index must be served by Pages itself — a redirect here would mean `_redirects` lost its first rule.
       if curl -fsS "$HOST/$f" | cmp -s - "registry/$f"; then echo "  live = tree   $f"; else echo "  DIFFERS       $f"; rc=1; fi
+      # Every version's tarball, the way a client gets it: through this host, following the redirect.
+      python3 -c 'import json,sys; [print(v["tarball"], v["integrity"]) for v in json.load(open(sys.argv[1]))["versions"]]' "registry/$f" |
+      while read -r tb integ; do
+        got="sha256-$(curl -fsSL "$HOST/$tb" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+        if [ "$got" = "$integ" ]; then echo "  live = index  $tb"; else echo "  DIFFERS       $tb"; exit 1; fi
+      done || rc=1
     done
     code=$(curl -s -o /dev/null -w '%{http_code}' "$HOST/@kama/no-such-package/index.json")
     [ "$code" = 404 ] && echo "  missing path -> 404" || { echo "  missing path -> $code (want 404 — is registry/404.html deployed?)"; rc=1; }

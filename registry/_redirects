@@ -1,0 +1,5 @@
+# Tarballs live in R2 (dl.kama-lang.org), never in this tree. Rules are tried in order and a redirect beats a
+# static file, so the first rule keeps every index.json served from here and the second sends everything else
+# below a package — its tarballs — to the bucket. tools/check.py requires exactly these two rules, in order.
+/@kama/:pkg/index.json /@kama/:pkg/index.json 200
+/@kama/:pkg/:file https://dl.kama-lang.org/@kama/:pkg/:file 302
