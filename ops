@@ -52,28 +52,32 @@ case "$task" in
     case "$manifest" in /*) ;; *) manifest="$CALLER/$manifest" ;; esac     # relative to where you ran it
     [ -f "$manifest" ] || { echo "ops: no such manifest: $manifest" >&2; exit 1; }
     [ -z "$(git status --porcelain -- registry)" ] || { echo "ops: registry/ has uncommitted changes — commit or discard them first" >&2; exit 1; }
+    # A tarball is IGNORED here (.gitignore), so `git status` cannot see a stray one — and publish must never pick up
+    # a file it did not just build: the bucket keeps whatever it is given, forever.
+    [ -z "$(git ls-files --others -- 'registry/*.tar.gz')" ] || { echo "ops: a tarball is lying in registry/ — remove it first (they live in the bucket):" >&2; git ls-files --others -- 'registry/*.tar.gz' >&2; exit 1; }
     # A published version is permanent, and `kama publish` tarballs whatever is there — it does not compile
     # it. A package that fails to check would be released forever, so check it first. (Measured: a package
     # with a parse error published cleanly, and only broke in the consumer's build.)
     ( cd "$(dirname "$manifest")" && "$KAMA" check "$(basename "$manifest")" ) || { echo "ops: $manifest does not check — nothing published" >&2; exit 1; }
     ident=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["name"]+"@"+d["version"])' "$manifest")
+    key=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["name"]+"/"+d["version"]+".tar.gz")' "$manifest")
     stage=$(mktemp -d)
     # Anything refused before the upload leaves registry/ exactly as it was (it was checked clean above): a
-    # refused tarball left lying in the working tree is one `git add -A` away from being committed.
-    refuse() { git checkout -q -- registry 2>/dev/null || true; git clean -qfd registry; rm -rf "$stage"; echo "ops: refused — $1" >&2; exit 1; }
+    # refused tarball left lying in the working tree is one `git add -f` away from being committed.
+    # `-x`: a tarball `kama publish` left in registry/ is IGNORED (.gitignore), and plain `git clean` keeps those.
+    refuse() { git checkout -q -- registry 2>/dev/null || true; git clean -qfdx registry; rm -rf "$stage"; echo "ops: refused — $1" >&2; exit 1; }
     ( cd "$(dirname "$manifest")" && "$KAMA" publish "$(basename "$manifest")" --registry "file://$REG" ) \
       || refuse "registry/ restored, nothing published"
-    # `kama publish` writes the tarball beside its index; registry/ never holds one, so it is staged out at once.
-    git ls-files --others -- 'registry/*.tar.gz' | while IFS= read -r f; do
-      mkdir -p "$stage/$(dirname "${f#registry/}")"; mv "$f" "$stage/${f#registry/}"
-    done
+    # `kama publish` writes exactly this tarball beside its index; registry/ never holds one, so it is staged out
+    # at once — this one file, by name, and nothing else is ever uploaded.
+    [ -f "registry/$key" ] || refuse "kama publish did not write registry/$key"
+    mkdir -p "$stage/$(dirname "$key")" && mv "registry/$key" "$stage/$key"
     REGISTRY_PENDING_DIR="$stage" python3 tools/check.py --base "$(base_ref)" || refuse "registry/ restored, nothing uploaded"
-    ( cd "$stage" && find . -name '*.tar.gz' | sed 's|^\./||' ) | while IFS= read -r key; do
-      # The archive is deterministic, so a re-run rebuilds the same bytes, and ones already uploaded are accepted.
-      upload "$stage/$key" "$key" || { echo "ops: the index is NOT committed — \`git checkout -- registry\`, fix, and re-run" >&2; exit 1; }
-    done || { rm -rf "$stage"; exit 1; }
+    # The archive is deterministic, so a re-run rebuilds the same bytes, and ones already uploaded are accepted.
+    upload "$stage/$key" "$key" || { rm -rf "$stage"; echo "ops: the index is NOT committed — \`git checkout -- registry\`, fix, and re-run" >&2; exit 1; }
     rm -rf "$stage"
-    git add registry && git commit -q -m "publish $ident" && echo "ops: committed 'publish $ident' — push to release its index: git push"
+    # `-- registry`: the commit holds the index and nothing else, whatever else happens to be staged.
+    git add registry && git commit -q -m "publish $ident" -- registry && echo "ops: committed 'publish $ident' — push to release its index: git push"
     ;;
   migrate)
     # One-time (2026-09-27): the tarballs published while they still lived in git move into the bucket. Their
@@ -82,7 +86,7 @@ case "$task" in
     [ -n "$files" ] || { echo "ops: no tarball is tracked in registry/ — nothing to migrate"; exit 0; }
     for f in $files; do upload "$f" "${f#registry/}" || exit 1; git rm -q -- "$f"; done
     python3 tools/check.py --base "$(base_ref)" || { echo "ops: check failed after the move — nothing committed (git restore --staged registry)" >&2; exit 1; }
-    git commit -q -m "tarballs: move the published tarballs into R2 (dl.kama-lang.org)" \
+    git commit -q -m "tarballs: move the published tarballs into R2 (dl.kama-lang.org)" -- registry \
       && echo "ops: committed the move — push it (with the tooling commit) to deploy: git push"
     ;;
   check)  python3 tools/check.py --base "${1:-$(base_ref)}" ;;

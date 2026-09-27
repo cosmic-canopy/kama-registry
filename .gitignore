@@ -1,3 +1,7 @@
 # local secrets — seed from .env.example
 .env
 .DS_Store
+# Tarballs live in the R2 bucket, never in git (README § Why the tarballs are not in git). `./ops publish` stages
+# each one out of registry/ and uploads it; this line makes a stray one invisible to `git add` as well — only
+# `git add -f` could track it, and then tools/check.py refuses the push in CI before it deploys.
+registry/**/*.tar.gz

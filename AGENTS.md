@@ -11,7 +11,9 @@ https://registry.kama-lang.org. Read `README.md` first.
 - **Tarballs never go in git or in `registry/`.** They live in the R2 bucket `kama-registry-tarballs`
   (`dl.kama-lang.org`), and `./ops publish` uploads each one only after every check has passed. The bucket
   is LOCKED — nothing in it can be overwritten or deleted, ever — so **never upload a probe or test object
-  to it**: it would be permanent, and a key once taken spends that version number.
+  to it**: it would be permanent, and a key once taken spends that version number. `.gitignore` hides every
+  `registry/**/*.tar.gz` from `git add`, and `ops publish` refuses to run while one is lying in the tree —
+  it uploads exactly the tarball it just built, by name, and commits only `registry/`.
 - **`_redirects` is load-bearing and ordered.** Its first rule keeps every `index.json` on Pages; its second
   sends everything else below a package to the bucket. A redirect beats a static file, so dropping or
   reordering the first rule redirects every index (measured). `tools/check.py` holds both lines down.
