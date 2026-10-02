@@ -8,15 +8,20 @@ and this repo accepts commits from anywhere git does — so the host enforces th
               to the sha256 its index records. Tarballs live in R2 behind dl.kama-lang.org, never in this
               tree: `ops publish` stages one outside registry/ and uploads it only after this check passes.
   write-once  against --base, no existing version (or package) is removed and no published version's entry
-              changes. A lockfile pins the hash; changing it breaks every consumer. The bytes themselves are
-              held by the bucket's lock, which refuses any overwrite or delete, forever.
+              changes — not its integrity, tarball, revision or dependencies. A lockfile pins the hash;
+              changing it breaks every consumer. The bytes themselves are held by the bucket's lock, which
+              refuses any overwrite or delete, forever.
   scope       this is the OFFICIAL registry: it serves `@kama/*` and nothing else, and never `@std/*`
   secrets     no tarball contains a secret-shaped file (.env, private keys, credential files). Before 0.9.452
               `kama publish` tarred the directory and ignored .gitignore, so a gitignored .env shipped;
               from 0.9.452 it ships only committed, git-tracked files and refuses these names itself. But
               this repo takes a tarball from any compiler, and a version here is permanent — it can never
               be withdrawn — so the host refuses them whatever the publisher ran.
-  hygiene     registry/ holds the indexes and the site's own pages and nothing else — no tarball, no stray
+  installable the tarball's own kama.json — the manifest a consumer's resolver reads — names no `path`
+              dependency. A fetched package arrives without that directory, so no consumer could install the
+              version. Before 0.9.472 `kama publish` let one through (and recorded it in the index as `{}`, as
+              it does a git or url dependency, so the index cannot tell them apart); it refuses one now.
+  hygiene    registry/ holds the indexes and the site's own pages and nothing else — no tarball, no stray
               file. 404.html exists: without it Cloudflare Pages serves index.html with status 200 for every
               unknown path. _redirects holds exactly its two rules, in order: a redirect beats a static file,
               so without the first one every index.json would be sent to the bucket along with the tarballs.
@@ -51,6 +56,20 @@ def secrets_in(data):
                     if m.isfile() and SECRET.match(os.path.basename(m.name)) and not SECRET_OK.match(os.path.basename(m.name))]
     except tarfile.TarError:
         return None                                 # not a tarball at all — the caller says so
+
+def path_deps_in(data):
+    """The `path` dependencies of the tarball's root kama.json — the shallowest one, since `kama publish` roots the
+    archive at one directory. A nested example or test project may depend on its own package by path: nobody
+    installs those. None when there is no readable root manifest."""
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode='r:*') as t:
+            manifests = [m for m in t.getmembers() if m.isfile() and os.path.basename(m.name) == 'kama.json']
+            if not manifests: return None
+            root = min(manifests, key=lambda m: len([p for p in m.name.split('/') if p not in ('', '.')]))
+            deps = json.load(t.extractfile(root)).get('dependencies') or {}
+            return sorted(name for name, d in deps.items() if isinstance(d, dict) and 'path' in d)
+    except (tarfile.TarError, ValueError, AttributeError):
+        return None
 
 errors = []
 def err(msg): errors.append(msg)
@@ -152,6 +171,13 @@ def main():
                 err(f'{where}: tarball contains {leak!r}, which looks like a secret — a published version '
                     f'is permanent, so it could never be withdrawn. Remove it from the package and republish '
                     f'(a template such as .env.example is fine)')
+            deps = path_deps_in(data)
+            if deps is None: err(f'{where}: {tb!r} has no readable kama.json at its root'); continue
+            for dep in deps:
+                err(f'{where}: its kama.json depends on {dep!r} by `path` — a fetched package arrives without that '
+                    f'directory, so no consumer could install this version, and it would be permanent. Depend on a '
+                    f'released version and develop against the local copy with `overrides` in kama.local.json '
+                    f'(kama publish refuses this itself from 0.9.472)')
         now[pkg] = seen
 
     for d, _, files in os.walk(TREE):
@@ -171,7 +197,9 @@ def main():
                 where = f'{pkg}@{ver}'
                 cur = now[pkg].get(ver)
                 if cur is None: err(f'{where}: was published and is now gone — versions are permanent'); continue
-                for k in ('integrity', 'tarball'):
+                # The whole entry: a consumer resolves the graph from its `dependencies`, and `revision` is the claim
+                # that the bytes rebuild from that commit — neither may move once published, any more than the hash.
+                for k in sorted(set(cur) | set(v)):
                     if cur.get(k) != v.get(k): err(f'{where}: "{k}" changed — a published version is write-once')
         history_note = f'against {base[:12]} ({len(old)} package(s) there)'
     elif base and set(base) != {'0'}:

@@ -71,7 +71,8 @@ and that a missing package gets a real 404.
 - **Integrity** — every version's tarball is in the bucket, and a new one is downloaded and must hash to
   the sha256 its index records.
 - **Write-once** — against the previous tip, no published version is removed and no version's entry
-  changes; the bucket's lock refuses any overwrite or delete of the bytes. A consumer's lockfile pins the
+  changes — not its integrity, tarball, revision or dependencies; the bucket's lock refuses any overwrite
+  or delete of the bytes. A consumer's lockfile pins the
   hash; changing it breaks every one of them. To fix a release, publish a new version.
 - **Scope** — this is the official registry: `@kama/*` only. `@std` is reserved forever — the standard
   library ships inside the compiler and is never a package.
@@ -81,6 +82,11 @@ and that a missing package gets a real 404.
   0.9.452 it ships only committed, git-tracked files and refuses these names itself. The host cannot know
   which compiler a publisher ran, so this is still the line that stops a project's `.env` becoming a
   permanent public file.
+- **Installable** — the `kama.json` at the tarball's root names no `path` dependency: a fetched package
+  arrives without that directory, so no consumer could install the version. `kama publish` refuses one
+  from 0.9.472; before that it let one through, and the version number was spent. The check reads the
+  tarball's own manifest, because that is what a consumer's resolver reads — the index records a path
+  dependency as `{}`, the same as a git or url one.
 - **Hygiene** — `registry/` holds indexes and the site's own pages and nothing else: no tarball, no stray
   file. `404.html` exists — without it, Cloudflare Pages treats the site as a single-page app and answers
   every unknown path with `index.html` and status 200. `_redirects` holds exactly its two rules, in order:

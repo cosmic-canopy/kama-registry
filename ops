@@ -55,7 +55,7 @@ case "$task" in
     # A tarball is IGNORED here (.gitignore), so `git status` cannot see a stray one — and publish must never pick up
     # a file it did not just build: the bucket keeps whatever it is given, forever.
     [ -z "$(git ls-files --others -- 'registry/*.tar.gz')" ] || { echo "ops: a tarball is lying in registry/ — remove it first (they live in the bucket):" >&2; git ls-files --others -- 'registry/*.tar.gz' >&2; exit 1; }
-    # A published version is permanent, and `kama publish` tarballs whatever is there — it does not compile
+    # A published version is permanent, and `kama publish` archives what is committed — it does not compile
     # it. A package that fails to check would be released forever, so check it first. (Measured: a package
     # with a parse error published cleanly, and only broke in the consumer's build.)
     ( cd "$(dirname "$manifest")" && "$KAMA" check "$(basename "$manifest")" ) || { echo "ops: $manifest does not check — nothing published" >&2; exit 1; }
