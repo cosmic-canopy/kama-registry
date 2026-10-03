@@ -11,11 +11,20 @@ There is no registry *service*. A kama registry is a static file tree: this repo
 ```
 registry/                        (this repository → Cloudflare Pages)
   @kama/sodium/index.json        the published versions, each pinned by the sha256 of its tarball
-  index.html, 404.html           the host's own pages
-  _redirects                     sends every tarball path to the bucket; keeps index.json here
+  catalog.json                   every package's newest version + description: what search reads
+  404.html                       the host's own page for an unknown path
+  _redirects                     sends every tarball path to the bucket; keeps index.json and the pages here
 bucket kama-registry-tarballs    (R2 → dl.kama-lang.org, locked: nothing in it can change or go)
   @kama/sodium/0.5.0.tar.gz      the sources of one version
 ```
+
+**One host, two audiences.** The toolchain reads `index.json` and `catalog.json`. People read pages built from
+the same tree at deploy time — https://registry.kama-lang.org lists every package with a search box (the rule
+`kama pkg search` applies to the same catalog), and `/@kama/<pkg>/` shows a package's install line, versions,
+dependencies and README. The pages are written by the kama repository's `tools/site/registry.mjs` (the layout,
+stylesheet and highlighter kama-lang.org uses), pinned in `deploy.yml` as `KAMA_SITE_REV`; `./ops preview`
+builds and serves them locally as Pages would. Nothing in `registry/` is a page: the build copies it byte for
+byte, and writes the pages beside it.
 
 The toolchain fetches `<base>/<name>/index.json`, picks the highest version satisfying the range, fetches
 that tarball — `registry.kama-lang.org/@kama/sodium/0.5.0.tar.gz`, which redirects to the bucket — and
@@ -87,10 +96,16 @@ and that a missing package gets a real 404.
   from 0.9.472; before that it let one through, and the version number was spent. The check reads the
   tarball's own manifest, because that is what a consumer's resolver reads — the index records a path
   dependency as `{}`, the same as a git or url one.
-- **Hygiene** — `registry/` holds indexes and the site's own pages and nothing else: no tarball, no stray
-  file. `404.html` exists — without it, Cloudflare Pages treats the site as a single-page app and answers
-  every unknown path with `index.html` and status 200. `_redirects` holds exactly its two rules, in order:
-  a redirect beats a static file, so without the first, every `index.json` would be sent to the bucket too.
+- **Catalog** — `catalog.json` says exactly what the indexes say: each package's highest version with its
+  `license`, `description`, `repository` and `keywords`. `kama publish` (0.9.523 on) rebuilds it on every
+  publish; `python3 tools/check.py --write-catalog` writes it from the indexes in the same format, for a
+  registry whose last publish predates it. It is never edited by hand.
+- **Hygiene** — `registry/` holds the indexes, the catalog and the host's own files, and nothing else: no
+  tarball, no stray file, and no `index.html` (the pages are generated, and would overwrite one). `404.html`
+  exists — without it, Cloudflare Pages treats the site as a single-page app and answers every unknown path
+  with `index.html` and status 200. `_redirects` holds exactly its three rules, in order: a redirect beats a
+  static file, so without the first, every `index.json` would be sent to the bucket too, and without the
+  second a page's explicit `…/index.html`.
 
 `kama publish` already refuses to overwrite a version, but that is one client on one machine; git accepts
 commits from anywhere. The host enforces the same rules itself.

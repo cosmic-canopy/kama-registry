@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""check.py [--base REF] — what this registry guarantees, enforced before anything deploys.
+"""check.py [--base REF] [--write-catalog] — what this registry guarantees, enforced before anything deploys.
 
 `kama publish` already refuses to overwrite a version. That is a promise made by ONE client, on ONE machine,
 and this repo accepts commits from anywhere git does — so the host enforces the same rules itself:
@@ -21,10 +21,17 @@ and this repo accepts commits from anywhere git does — so the host enforces th
               dependency. A fetched package arrives without that directory, so no consumer could install the
               version. Before 0.9.472 `kama publish` let one through (and recorded it in the index as `{}`, as
               it does a git or url dependency, so the index cannot tell them apart); it refuses one now.
-  hygiene    registry/ holds the indexes and the site's own pages and nothing else — no tarball, no stray
-              file. 404.html exists: without it Cloudflare Pages serves index.html with status 200 for every
-              unknown path. _redirects holds exactly its two rules, in order: a redirect beats a static file,
-              so without the first one every index.json would be sent to the bucket along with the tarballs.
+  catalog    registry/catalog.json — every package's highest version and what a registry shows about it, the
+              file `kama pkg search` and the site's search read — says exactly what the indexes say. `kama publish`
+              (0.9.523 on) rebuilds it on every publish; `--write-catalog` writes it from the indexes, in the same
+              format, for a registry whose last publish predates it.
+  hygiene    registry/ holds the indexes, the catalog and the host's own files and nothing else — no tarball, no
+              stray file, and no index.html: the pages people read are generated at deploy time by the kama
+              repository's tools/site/registry.mjs, so a hand-written one would be overwritten. 404.html exists:
+              without it Cloudflare Pages serves index.html with status 200 for every unknown path. _redirects
+              holds exactly its three rules, in order: a redirect beats a static file, so without the first every
+              index.json would be sent to the bucket along with the tarballs, and without the second a page's
+              explicit `…/index.html`.
 
 REGISTRY_PENDING_DIR names where `ops publish` staged tarballs not yet uploaded (their bytes are read there);
 REGISTRY_ARTIFACTS overrides the bucket's base URL, for a test against a local server.
@@ -38,12 +45,16 @@ TREE = os.path.join(ROOT, 'registry')
 PREFIX = 'registry/'
 OFFICIAL, RESERVED = '@kama/', '@std/'
 INTEGRITY = re.compile(r'^sha256-([0-9a-f]{64})$')
-SITE_FILES = {'index.html', '404.html', '_redirects'}
+SITE_FILES = {'404.html', '_redirects'}
+CATALOG = 'catalog.json'
 ARTIFACT_HOST = 'https://dl.kama-lang.org/'
 ARTIFACTS = os.environ.get('REGISTRY_ARTIFACTS', ARTIFACT_HOST)
 PENDING = os.environ.get('REGISTRY_PENDING_DIR', '')
-# Measured with `wrangler pages dev` (2026-09-27): with only the second rule, index.json answers 302.
+# Measured with `wrangler pages dev` (2026-09-27): with only the last rule, index.json answers 302. And (2026-10-02):
+# a package page at `/@kama/<pkg>/` is served with no rule of its own — `:file` matches no empty segment — while its
+# explicit `index.html` would reach the bucket without the second.
 REDIRECTS = ['/@kama/:pkg/index.json /@kama/:pkg/index.json 200',
+             '/@kama/:pkg/index.html /@kama/:pkg/ 301',
              f'/@kama/:pkg/:file {ARTIFACT_HOST}@kama/:pkg/:file 302']
 # Secret-shaped basenames. A template (.env.example) is the documented way to ship the NAMES without values.
 SECRET = re.compile(r'''^(\.env(\..+)?|.*\.(pem|key|p12|pfx|jks|keystore)|id_(rsa|dsa|ecdsa|ed25519)|\.netrc|\.npmrc|\.pypirc|kama\.local\.json)$''')
@@ -120,6 +131,38 @@ def load(path_or_bytes, label):
     except Exception as e:
         err(f'{label}: not valid JSON ({e})'); return None
 
+SEMVER = re.compile(r'^(\d+)\.(\d+)\.(\d+)$')
+
+def catalog_from(indexes):
+    """What `kama publish` writes to catalog.json (writeRegistryCatalog in kama.driver.cpp): per package, sorted by
+    path, its highest MAJOR.MINOR.PATCH version with `license`, `description`, `repository` and `keywords` when
+    that version's entry has them."""
+    out = []
+    for pkg in sorted(indexes):
+        idx = indexes[pkg] or {}
+        best = None
+        for v in idx.get('versions') or []:
+            m = SEMVER.match(v.get('version') or '')
+            if m and (best is None or tuple(map(int, m.groups())) > best[0]): best = (tuple(map(int, m.groups())), v)
+        if best is None: continue
+        v = best[1]
+        entry = {'name': idx.get('name') or pkg, 'version': v['version']}
+        for k in ('license', 'description', 'repository'):
+            if v.get(k): entry[k] = v[k]
+        if v.get('keywords'): entry['keywords'] = v['keywords']
+        out.append(entry)
+    return out
+
+def catalog_text(entries):
+    """catalog.json byte for byte as `kama publish` writes it: one package per line."""
+    s = lambda x: json.dumps(x, ensure_ascii=False)
+    lines = []
+    for e in entries:
+        parts = [f'"{k}": {s(e[k])}' if k != 'keywords' else '"keywords": [' + ', '.join(s(w) for w in e[k]) + ']'
+                 for k in ('name', 'version', 'license', 'description', 'repository', 'keywords') if k in e]
+        lines.append('{ ' + ', '.join(parts) + ' }')
+    return '{\n  "packages": [' + (('\n    ' + ',\n    '.join(lines) + '\n  ]') if lines else ']') + '\n}\n'
+
 def main():
     base = ''
     if '--base' in sys.argv:
@@ -132,8 +175,22 @@ def main():
         rules = [' '.join(l.split()) for l in open(rp) if l.strip() and not l.lstrip().startswith('#')]
         if rules != REDIRECTS:
             err('registry/_redirects must hold exactly these rules, in this order — the first keeps every '
-                'index.json on Pages, the second sends tarballs to the bucket:\n    ' + '\n    '.join(REDIRECTS))
+                'index.json on Pages, the second keeps a package page, the third sends tarballs to the bucket:\n    '
+                + '\n    '.join(REDIRECTS))
     old = history(base)
+
+    loaded = {pkg: load(ipath, f'{PREFIX}{pkg}/index.json') for pkg, ipath in sorted(indexes_on_disk().items())}
+    want = catalog_text(catalog_from(loaded))
+    cpath = os.path.join(TREE, CATALOG)
+    if '--write-catalog' in sys.argv:
+        with open(cpath, 'w', encoding='utf-8', newline='\n') as f: f.write(want)
+        print(f'check: wrote {PREFIX}{CATALOG} ({len(catalog_from(loaded))} package(s))')
+    if not os.path.isfile(cpath):
+        err(f'{PREFIX}{CATALOG} is missing — `kama publish` (0.9.523 on) writes it; for a registry whose last publish '
+            f'predates that, `python3 tools/check.py --write-catalog`')
+    elif open(cpath, encoding='utf-8').read() != want:
+        err(f'{PREFIX}{CATALOG} does not say what the indexes say — it is rebuilt by every `kama publish`, and '
+            f'`python3 tools/check.py --write-catalog` rewrites it; it must never be edited by hand')
 
     now, nversions = {}, 0
     for pkg, ipath in sorted(indexes_on_disk().items()):
@@ -183,7 +240,10 @@ def main():
     for d, _, files in os.walk(TREE):
         for f in files:
             rel = os.path.relpath(os.path.join(d, f), TREE).replace(os.sep, '/')
-            if rel in SITE_FILES or f == 'index.json': continue
+            if rel in SITE_FILES or rel == CATALOG or f == 'index.json': continue
+            if rel == 'index.html':
+                err(f'{PREFIX}index.html: the pages are generated at deploy time (the kama repository\'s '
+                    f'tools/site/registry.mjs), which would overwrite this one — remove it'); continue
             if f.endswith('.tar.gz'):
                 err(f'{PREFIX}{rel}: a tarball in the tree — tarballs live in the bucket, and one here would be '
                     f'deployed to Pages and committed to git; `ops publish` stages and uploads it'); continue

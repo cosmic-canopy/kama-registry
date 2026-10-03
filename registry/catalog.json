@@ -1,0 +1,7 @@
+{
+  "packages": [
+    { "name": "@kama/postgres", "version": "0.1.0" },
+    { "name": "@kama/sodium", "version": "0.5.1" },
+    { "name": "@kama/tls", "version": "0.1.0" }
+  ]
+}

@@ -10,6 +10,9 @@ PROJECT=kama-registry                     # the Cloudflare Pages project (declar
 HOST=https://registry.kama-lang.org
 BUCKET=kama-registry-tarballs             # the R2 bucket holding every tarball (declared in cstar/provisioning)
 WRANGLER="${WRANGLER:-npx --yes wrangler@3}"
+# The pages people read are built by the kama repository's tools/site/registry.mjs (layout, stylesheet and
+# highlighter shared with kama-lang.org). CI checks it out at a pinned commit; here, a checkout beside this one.
+KAMA_REPO="${KAMA_REPO:-../cstar}"
 
 sha256() { python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$1"; }
 
@@ -37,9 +40,13 @@ kama registry ops — usage: ./ops <task>
 
   publish <kama.json>   publish a package: check it, upload its tarball (permanent), commit its index (does NOT push)
   migrate               one-time: move tarballs still tracked in registry/ into the bucket, and commit
-  check [<ref>]         integrity, scope and write-once checks (default base: origin/main, else HEAD)
-  deploy                deploy registry/ to Cloudflare Pages by hand (CI does this on push to main)
-  verify                live index.json = tree, every tarball (through the redirect) = its integrity, 404s
+  check [<ref>]         integrity, scope, catalog and write-once checks (default base: origin/main, else HEAD)
+  site                  build the pages into _site/ — registry/ copied as is, plus the pages people read
+                        (KAMA_REPO names the kama checkout to build them with; default ../cstar)
+  preview               site, then serve _site/ locally as Pages would (wrangler pages dev, _redirects included)
+  deploy                build and deploy _site/ to Cloudflare Pages by hand (CI does this on push to main)
+  verify                live index.json and catalog.json = tree, every tarball (through the redirect) = its
+                        integrity, the pages answer, 404s
   help                  this help
 U
 }
@@ -90,9 +97,20 @@ case "$task" in
       && echo "ops: committed the move — push it (with the tooling commit) to deploy: git push"
     ;;
   check)  python3 tools/check.py --base "${1:-$(base_ref)}" ;;
+  site)
+    [ -f "$KAMA_REPO/tools/site/registry.mjs" ] || { echo "ops: no kama checkout at $KAMA_REPO (set KAMA_REPO)" >&2; exit 1; }
+    [ -d "$KAMA_REPO/node_modules/marked" ] || npm --prefix "$KAMA_REPO" ci --no-audit --no-fund
+    node "$KAMA_REPO/tools/site/registry.mjs" --registry registry --out _site ;;
+  preview)
+    # From a scratch directory: wrangler keeps its state (.wrangler/, node_modules/.mf) in its working directory.
+    "$0" site
+    site="$(pwd)/_site"; scratch=$(mktemp -d)
+    ( cd "$scratch" && $WRANGLER pages dev "$site" --port "${PORT:-8799}" ) || true
+    rm -rf "$scratch" ;;
   deploy)
     python3 tools/check.py --base "$(base_ref)"
-    npx --yes wrangler@3 pages deploy registry --project-name="$PROJECT" --branch=main ;;
+    "$0" site
+    $WRANGLER pages deploy _site --project-name="$PROJECT" --branch=main ;;
   verify)
     rc=0
     for f in $(cd registry && find . -name index.json | sed 's|^\./||'); do
@@ -104,6 +122,13 @@ case "$task" in
         got="sha256-$(curl -fsSL "$HOST/$tb" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
         if [ "$got" = "$integ" ]; then echo "  live = index  $tb"; else echo "  DIFFERS       $tb"; exit 1; fi
       done || rc=1
+    done
+    if curl -fsS "$HOST/catalog.json" | cmp -s - registry/catalog.json; then echo "  live = tree   catalog.json"; else echo "  DIFFERS       catalog.json"; rc=1; fi
+    for p in $(python3 -c 'import json; [print(p["name"]) for p in json.load(open("registry/catalog.json"))["packages"]]'); do
+      page=$(curl -s -o /dev/null -w '%{http_code} %{content_type}' "$HOST/$p/")
+      case "$page" in "200 text/html"*) echo "  page          $p/" ;; *) echo "  page $p/ -> $page (want 200 text/html)"; rc=1 ;; esac
+      code=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "$HOST/$p/index.html")
+      [ "$code" = "301 $HOST/$p/" ] && echo "  $p/index.html -> the page" || { echo "  $p/index.html -> $code (want 301 to the page)"; rc=1; }
     done
     code=$(curl -s -o /dev/null -w '%{http_code}' "$HOST/@kama/no-such-package/index.json")
     [ "$code" = 404 ] && echo "  missing path -> 404" || { echo "  missing path -> $code (want 404 — is registry/404.html deployed?)"; rc=1; }
