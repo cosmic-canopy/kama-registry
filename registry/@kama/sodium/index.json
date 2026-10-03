@@ -1,6 +1,7 @@
 {
   "name": "@kama/sodium",
   "versions": [
+    { "version": "0.6.0", "integrity": "sha256-dd5ce421f29876b9848fa25683c258dff28381267539d3287b39f473ab402ed3", "tarball": "@kama/sodium/0.6.0.tar.gz", "revision": "git:43342347948dfa606ab627a8af6edca1dc09123f", "license": "MIT OR Apache-2.0", "description": "Authenticated encryption, signatures and key exchange: secretbox, XChaCha20-Poly1305 AEAD, sealed boxes, Ed25519, X25519. libsodium 1.0.20, vendored and built from source", "repository": "https://github.com/cosmic-canopy/kama-sodium", "keywords": ["crypto", "libsodium", "encryption", "nacl", "ed25519"] },
     { "version": "0.5.1", "integrity": "sha256-8d570ad45f83ec27de70bc238253963c2e178e07cb389d0117ea812eb58f1357", "tarball": "@kama/sodium/0.5.1.tar.gz", "revision": "git:81c6fdbda35a56dbd81c93316f732476e635a91b" },
     { "version": "0.5.0", "integrity": "sha256-2ce387db7f55971a29befb9426b0044fa11c6e2b5dc27edecfb87acc4c1b555d", "tarball": "@kama/sodium/0.5.0.tar.gz", "revision": "git:03352c01697b20ff6af93ff10d06ee75c10a52df" }
   ]
