@@ -33,7 +33,7 @@ jobs:
       # The kama commit whose tools/site/registry.mjs builds the pages — the layout, stylesheet and highlighter
       # kama-lang.org uses. Pinned, so a change to the kama repository never changes this site unannounced:
       # bump it to take one, after `./ops preview` against that checkout.
-      KAMA_SITE_REV: f8212db34d049e711d8783da9855458568a589da   # kama f8212db3 — registry.mjs
+      KAMA_SITE_REV: 666905245b0629365fd05957443328fed363b21f   # kama 66690524 — registry.mjs + the mobile nav fix
     steps:
       - uses: actions/checkout@v5
         with: { fetch-depth: 0 }          # each version's page dates it by the commit that added it
