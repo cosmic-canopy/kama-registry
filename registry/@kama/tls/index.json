@@ -1,0 +1,6 @@
+{
+  "name": "@kama/tls",
+  "versions": [
+    { "version": "0.1.0", "integrity": "sha256-65ff9387f1b91f981fc1bad04d04ef47898f83cd4dfd41522206b354b80380c0", "tarball": "@kama/tls/0.1.0.tar.gz", "revision": "git:15267cbc91eba91cc7ad021c69aeb0126f8d0164" }
+  ]
+}
