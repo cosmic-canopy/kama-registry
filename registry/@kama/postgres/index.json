@@ -1,6 +1,7 @@
 {
   "name": "@kama/postgres",
   "versions": [
+    { "version": "0.2.0", "integrity": "sha256-fc21c36a0bac8a65102dcb36f0cd5ada450a98d59d63a8715101d40de0518682", "tarball": "@kama/postgres/0.2.0.tar.gz", "revision": "git:4cb88c0903c61b713af4100dc02b7fae1978cea3", "license": "MIT OR Apache-2.0", "description": "PostgreSQL client in kama: the v3 wire protocol, libpq's connection rules, TLS, COPY, pipelining and a statement cache", "repository": "https://github.com/cosmic-canopy/kama-postgres", "keywords": ["postgresql", "database", "sql", "libpq", "client"], "dependencies": { "@kama/tls": { "version": "^0.1.0" } } },
     { "version": "0.1.0", "integrity": "sha256-3a2c346afea6970f2c9a71b73134b8c0bae577bd1a14fe89731020d6ca722bce", "tarball": "@kama/postgres/0.1.0.tar.gz", "revision": "git:3ab354bd80894da08307887bc4178d681f460962", "dependencies": { "@kama/tls": { "version": "^0.1.0" } } }
   ]
 }

@@ -1,6 +1,6 @@
 {
   "packages": [
-    { "name": "@kama/postgres", "version": "0.1.0" },
+    { "name": "@kama/postgres", "version": "0.2.0", "license": "MIT OR Apache-2.0", "description": "PostgreSQL client in kama: the v3 wire protocol, libpq's connection rules, TLS, COPY, pipelining and a statement cache", "repository": "https://github.com/cosmic-canopy/kama-postgres", "keywords": ["postgresql", "database", "sql", "libpq", "client"] },
     { "name": "@kama/sodium", "version": "0.6.0", "license": "MIT OR Apache-2.0", "description": "Authenticated encryption, signatures and key exchange: secretbox, XChaCha20-Poly1305 AEAD, sealed boxes, Ed25519, X25519. libsodium 1.0.20, vendored and built from source", "repository": "https://github.com/cosmic-canopy/kama-sodium", "keywords": ["crypto", "libsodium", "encryption", "nacl", "ed25519"] },
     { "name": "@kama/tls", "version": "0.1.1", "license": "MIT OR Apache-2.0", "description": "TLS 1.2 and 1.3, client and server, over any ReliableStream: Mbed TLS 4.1 LTS, vendored and built from source", "repository": "https://github.com/cosmic-canopy/kama-tls", "keywords": ["ssl", "mbedtls", "x509", "crypto", "networking"] }
   ]
