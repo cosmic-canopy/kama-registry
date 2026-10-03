@@ -1,0 +1,6 @@
+{
+  "name": "@kama/postgres",
+  "versions": [
+    { "version": "0.1.0", "integrity": "sha256-3a2c346afea6970f2c9a71b73134b8c0bae577bd1a14fe89731020d6ca722bce", "tarball": "@kama/postgres/0.1.0.tar.gz", "revision": "git:3ab354bd80894da08307887bc4178d681f460962", "dependencies": { "@kama/tls": { "version": "^0.1.0" } } }
+  ]
+}
