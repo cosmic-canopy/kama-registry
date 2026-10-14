@@ -1,0 +1,6 @@
+{
+  "name": "@kama/rmlui",
+  "versions": [
+    { "version": "0.1.0", "integrity": "sha256-34be5ba37f2baa6155da110958378a11c2de991bf236cd2f8ef622ede73dc3a8", "tarball": "@kama/rmlui/0.1.0.tar.gz", "revision": "git:278f717c4d7fc326ce02357f5c865542bec615b1", "license": "MIT OR Apache-2.0", "description": "RmlUi 6.3 vendored and bound: HTML/CSS-like documents laid out natively, drawn by your own renderer", "repository": "https://github.com/cosmic-canopy/kama-rmlui", "keywords": ["ui", "rmlui", "html", "css", "gui"], "dependencies": { "@kama/freetype": { "version": "^0.1.0" } } }
+  ]
+}
