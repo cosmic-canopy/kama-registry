@@ -1,0 +1,6 @@
+{
+  "name": "@kama/freetype",
+  "versions": [
+    { "version": "0.1.0", "integrity": "sha256-82b8b6a5030b36699831a1bcf4bef9167d2f23aac26e9aae3a33032450d7ffa1", "tarball": "@kama/freetype/0.1.0.tar.gz", "revision": "git:6924a66808756063195bcf5946b1eb67b41404e2", "license": "MIT OR Apache-2.0", "description": "FreeType 2.14 vendored and bound: font faces in, glyph coverage bitmaps and metrics out", "repository": "https://github.com/cosmic-canopy/kama-freetype", "keywords": ["font", "freetype", "truetype", "opentype", "text"] }
+  ]
+}
